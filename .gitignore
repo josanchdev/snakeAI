@@ -71,3 +71,8 @@ Thumbs.db
 *.temp
 test_foundation.py
 
+
+# Trained model checkpoints - allow specific ones
+*.pth
+!checkpoints/dqn_snake_checkpoint_ep*.pth
+!checkpoints/.gitkeep

@@ -31,7 +31,7 @@ class AIManager:
         
     def load_model(self, checkpoint_path: Optional[str] = None) -> bool:
         """
-        Load AI model from checkpoint.
+        Load AI model from checkpoint with automatic architecture detection.
         
         Args:
             checkpoint_path: Path to checkpoint file. If None, loads latest.
@@ -57,36 +57,93 @@ class AIManager:
             logger.info(f"Loading model from: {checkpoint_path}")
             checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
             
-            # Import DQN here to avoid circular imports
-            from agent.dqn import DQN
-            
-            # Initialize model
-            self.model = DQN(input_dim=self.input_dim, output_dim=len(ACTIONS)).to(self.device)
-            
-            # Load model state
+            # Extract state dict and metadata
             if isinstance(checkpoint, dict) and 'model' in checkpoint:
-                self.model.load_state_dict(checkpoint['model'])
-                # Load additional metadata if available
-                self.model_metadata = {
-                    'checkpoint_path': str(checkpoint_path),
-                    'episode': self._extract_episode_from_filename(checkpoint_path.name),
-                    'optimizer_state': 'optimizer' in checkpoint,
-                    'additional_data': list(checkpoint.keys())
-                }
+                state_dict = checkpoint['model']
+                metadata = checkpoint
             else:
                 # Legacy format - just model state dict
-                self.model.load_state_dict(checkpoint)
-                self.model_metadata = {
-                    'checkpoint_path': str(checkpoint_path),
-                    'episode': self._extract_episode_from_filename(checkpoint_path.name),
-                    'format': 'legacy'
-                }
+                state_dict = checkpoint
+                metadata = {}
+            
+            # ✅ ENHANCED ARCHITECTURE DETECTION
+            # Check if this is an enhanced model by looking for fc4 layer
+            is_enhanced = 'fc4.weight' in state_dict
+            
+            if is_enhanced:
+                logger.info("🧠 Detected Enhanced DQN architecture")
+                
+                # Create Enhanced DQN class (same as in train.py)
+                class EnhancedDQN(torch.nn.Module):
+                    """Enhanced DQN with deeper architecture and better regularization."""
+                    
+                    def __init__(self, input_dim: int, output_dim: int):
+                        super().__init__()
+                        # Deeper network for better pattern recognition
+                        self.fc1 = torch.nn.Linear(input_dim, 512)
+                        self.fc2 = torch.nn.Linear(512, 256) 
+                        self.fc3 = torch.nn.Linear(256, 128)
+                        self.fc4 = torch.nn.Linear(128, output_dim)
+                        
+                        # Dropout for better generalization
+                        self.dropout = torch.nn.Dropout(0.1)
+                    
+                    def forward(self, x):
+                        x = torch.nn.functional.relu(self.fc1(x))
+                        x = self.dropout(x)
+                        x = torch.nn.functional.relu(self.fc2(x))
+                        x = self.dropout(x)
+                        x = torch.nn.functional.relu(self.fc3(x))
+                        x = self.fc4(x)
+                        return x
+                
+                # Initialize enhanced model
+                self.model = EnhancedDQN(input_dim=self.input_dim, output_dim=len(ACTIONS)).to(self.device)
+                
+            else:
+                logger.info("🔧 Detected Basic DQN architecture")
+                # Import basic DQN
+                from agent.dqn import DQN
+                
+                # Auto-detect hidden dimension from checkpoint
+                fc1_weight_shape = state_dict['fc1.weight'].shape
+                hidden_dim = fc1_weight_shape[0]  # First dimension is output size (hidden_dim)
+                
+                logger.info(f"🔍 Detected hidden_dim={hidden_dim}")
+                
+                # Initialize model with detected architecture
+                self.model = DQN(
+                    input_dim=self.input_dim, 
+                    output_dim=len(ACTIONS),
+                    hidden_dim=hidden_dim
+                ).to(self.device)
+            
+            # Load model state
+            self.model.load_state_dict(state_dict)
+            
+            # Set comprehensive metadata
+            param_count = sum(p.numel() for p in self.model.parameters())
+            self.model_metadata = {
+                'checkpoint_path': str(checkpoint_path),
+                'episode': self._extract_episode_from_filename(checkpoint_path.name),
+                'architecture': 'enhanced' if is_enhanced else 'basic',
+                'parameters': param_count,
+                'trainable_parameters': sum(p.numel() for p in self.model.parameters() if p.requires_grad),
+                'device': str(self.device),
+                'input_dim': self.input_dim,
+                'output_dim': len(ACTIONS),
+                'format': 'auto_detected',
+                'timestamp': metadata.get('timestamp', 'unknown'),
+                'training_completed': metadata.get('training_completed', False)
+            }
             
             # Set to evaluation mode
             self.model.eval()
             self.is_loaded = True
             
             logger.info(f"✅ Model loaded successfully from episode {self.model_metadata.get('episode', 'unknown')}")
+            logger.info(f"🏗️ Architecture: {self.model_metadata['architecture']} ({param_count:,} parameters)")
+            
             return True
             
         except Exception as e:
@@ -156,24 +213,16 @@ class AIManager:
         return probabilities.squeeze()
     
     def get_model_info(self) -> Dict[str, Any]:
-        """Get information about the loaded model."""
+        """Get comprehensive information about the loaded model."""
         if not self.is_loaded:
             return {"status": "No model loaded"}
         
         info = {
             "status": "Model loaded",
-            "device": str(self.device),
-            "input_dim": self.input_dim,
-            "output_dim": len(ACTIONS),
             "grid_size": self.grid_size,
             "actions": ACTION_NAMES,
             **self.model_metadata
         }
-        
-        # Add model parameter count
-        if self.model is not None:
-            info["parameters"] = sum(p.numel() for p in self.model.parameters())
-            info["trainable_parameters"] = sum(p.numel() for p in self.model.parameters() if p.requires_grad)
         
         return info
     
@@ -212,7 +261,12 @@ class AIManager:
                 for i in range(len(ACTION_NAMES))
             },
             "confidence": float(torch.max(probabilities).item()),
-            "uncertainty": float(1.0 - torch.max(probabilities).item())
+            "uncertainty": float(1.0 - torch.max(probabilities).item()),
+            "model_info": {
+                "architecture": self.model_metadata.get('architecture', 'unknown'),
+                "parameters": self.model_metadata.get('parameters', 0),
+                "episode": self.model_metadata.get('episode', 'unknown')
+            }
         }
         
         return analysis
