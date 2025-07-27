@@ -51,48 +51,48 @@ class GameConfig:
         """Calculate Y offset to center the game board."""
         return (self.screen_height - self.grid_pixel_width) // 2
 
-
 @dataclass
 class TrainingConfig:
-    """Training hyperparameters and optimization settings."""
+    """Enhanced training configuration for superior AI performance."""
     
-    # Environment settings
-    num_envs: int = 64
-    num_episodes: int = 4000
-    max_steps_per_episode: int = 100
+    # Environment settings - optimized for your RTX 3090
+    num_envs: int = 96
+    num_episodes: int = 4000  # More episodes for complex learning
+    max_steps_per_episode: int = 300  # Allow longer games
     
-    # Neural network settings
-    learning_rate: float = 5e-4
-    batch_size: int = 128
-    memory_size: int = 100000
+    # Neural network settings - upgraded architecture
+    learning_rate: float = 2e-4  # Slightly lower for stable convergence
+    batch_size: int = 512  # Increased for your RTX 3090
+    memory_size: int = 300000  # Larger memory for better sampling
     
-    # DQN specific settings
-    gamma: float = 0.99  # Discount factor
-    target_update_freq: int = 1000  # Steps between target network updates
+    # Advanced DQN settings
+    gamma: float = 0.995  
+    target_update_freq: int = 1500  # Less frequent updates for stability
     
-    # Exploration settings
+    # Enhanced exploration - better than simple epsilon decay
     epsilon_start: float = 1.0
-    epsilon_end: float = 0.05
-    epsilon_decay: float = 0.995
+    epsilon_end: float = 0.01  # Lower final epsilon
+    epsilon_decay: float = 0.99975  # Slower decay for better exploration
     
     # Training optimization
-    grad_accum_steps: int = 2
+    grad_accum_steps: int = 1  # Your RTX 3090 can handle full batches
     use_mixed_precision: bool = True
-    
-    # Checkpointing and logging
-    save_every: int = 1000  # Save every N episodes
-    log_every: int = 100   # Log every N episodes
+    gradient_clipping: float = 1.0
+
+    # Enhanced checkpointing
+    save_every: int = 250  # More frequent saves
+    log_every: int = 25   # More detailed logging
+
+    # 🎮 Anti-plateau game settings
+    reward_scaling: float = 1.0  # ✅ New: Can adjust reward magnitude
+    curriculum_learning: bool = True  # ✅ New: Progressive difficulty
+
     checkpoint_dir: str = "checkpoints"
     log_dir: str = "logs"
     
     # Device and reproducibility
     device: Optional[str] = None
     seed: int = 42
-    
-    def __post_init__(self):
-        """Set device automatically if not specified."""
-        if self.device is None:
-            self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 @dataclass
